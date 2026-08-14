@@ -1,0 +1,12 @@
+[project]
+name = "grok-jungle-web"
+version = "1.0.0"
+description = "Jungle (Dou Shou Qi) web port — pytest harness for the reused Python engine"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["public/py", "."]
+markers = ["slow: long playthrough or AI-vs-AI tests"]
+addopts = "-q"
+python_files = ["test_*.py"]

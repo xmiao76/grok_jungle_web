@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jungle — Dou Shou Qi</title>
+  <meta name="description" content="Play Jungle (Dou Shou Qi) against an AI in the browser. The grok_jungle Python engine runs on Pyodide.">
+  <link rel="icon" href="assets/pieces/gold/lion.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <div id="loading-overlay" class="overlay">
+    <div class="card">
+      <p class="seal">斗兽棋</p>
+      <h1>JUNGLE</h1>
+      <p class="subtitle">Dou Shou Qi</p>
+      <div class="spinner"></div>
+      <p id="loading-stage">Starting…</p>
+      <p class="hint">First load downloads the Python runtime (~10&nbsp;MB); it is cached afterwards.</p>
+    </div>
+  </div>
+
+  <div id="menu-overlay" class="overlay" hidden>
+    <div class="card menu">
+      <p class="seal">斗兽棋</p>
+      <h1>JUNGLE</h1>
+      <p class="subtitle">Dou Shou Qi</p>
+      <p id="engine-info" class="hint"></p>
+      <p class="hint credits">Made with model <b>Grok 4.6</b> (xAI)
+        · code agent <b>Grok Build</b></p>
+
+      <div class="menu-row">
+        <span class="label">AI strength</span>
+        <div class="segmented">
+          <button class="diff-btn" data-d="easy">Easy</button>
+          <button class="diff-btn active" data-d="normal">Normal</button>
+          <button class="diff-btn" data-d="strong">Strong</button>
+        </div>
+      </div>
+
+      <div class="menu-row">
+        <label class="label" for="first-toggle">Human moves first (Gold opens)</label>
+        <label class="switch">
+          <input type="checkbox" id="first-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <p class="hint first-note">You always own Gold. Off: Scarlet (AI) opens from the north. Flip later is view-only.</p>
+
+      <button id="btn-start-hva" class="primary">Play vs AI</button>
+      <button id="btn-start-ava" class="secondary">Watch AI vs AI</button>
+
+      <details class="rules">
+        <summary>How to play</summary>
+        <div>
+          <p><b>Goal:</b> win by moving any piece into the opponent’s <b>den</b>,
+          or by capturing every enemy animal.</p>
+          <p><b>Moving:</b> Gold sits south. Click one of your pieces, then a
+          highlighted square — jade dot = move, cinnabar ring = capture.
+          Pieces step one square orthogonally (never diagonally).</p>
+          <p><b>Ranks</b> (strong → weak): Elephant 8, Lion 7, Tiger 6, Leopard 5,
+          Wolf 4, Dog 3, Cat 2, Rat 1. You may capture equal or lower rank —
+          except the <b>Rat may capture the Elephant</b> from land, and the
+          Elephant can never take a Rat unless that Rat sits on the Elephant’s
+          <i>own</i> trap (rank 0).</p>
+          <ul>
+            <li><b>Rivers:</b> only the Rat swims. A Rat in water can be taken
+            only by another Rat in water, and cannot take the Elephant from water.</li>
+            <li><b>River jumps:</b> the <b>Lion</b> leaps two blocks horizontally
+            (a↔d, d↔g) and three blocks vertically (rank 3↔7). The <b>Tiger</b>
+            leaps two blocks only. A Rat on any water square in the path blocks
+            the leap. The landing square may be a capture.</li>
+            <li><b>Traps:</b> an enemy piece on one of <i>your</i> traps has
+            rank 0. Your own traps never harm you.</li>
+            <li><b>Dens:</b> you can never enter your own den.</li>
+          </ul>
+          <p><b>Also:</b> a side with no legal move loses. Threefold repetition,
+          or 100 half-moves without a capture, is a draw.</p>
+          <p><b>Controls:</b> Undo (or Ctrl+Z) takes back your turn and the AI
+          reply. Flip (or F) turns the view only — state and turn stay put.
+          Resign, Mute, Menu. You always play Gold.</p>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <div id="game-area" hidden>
+    <canvas id="board" width="448" height="576"></canvas>
+    <aside id="panel">
+      <div class="panel-head">
+        <h2>JUNGLE</h2>
+        <p id="game-sub" class="hint"></p>
+      </div>
+      <div id="status">
+        <span id="status-spinner" class="spinner small" hidden></span>
+        <span id="status-text">—</span>
+      </div>
+      <div class="buttons">
+        <button id="btn-undo">Undo</button>
+        <button id="btn-flip">Flip board</button>
+        <button id="btn-resign">Resign</button>
+        <button id="btn-mute">Mute</button>
+        <button id="btn-pause" hidden>Pause</button>
+        <button id="btn-menu">Menu</button>
+      </div>
+      <pre id="meta-text" class="meta"></pre>
+      <div class="trays">
+        <div class="tray">
+          <span class="tray-label"><span class="dot scarlet"></span>Captured from Scarlet</span>
+          <div id="captured-scarlet" class="tray-body">—</div>
+        </div>
+        <div class="tray">
+          <span class="tray-label"><span class="dot gold"></span>Captured from Gold</span>
+          <div id="captured-gold" class="tray-body">—</div>
+        </div>
+      </div>
+      <p id="last-move" class="hint"></p>
+      <h3>Moves</h3>
+      <ul id="history-list"></ul>
+    </aside>
+  </div>
+
+  <div id="gameover-overlay" class="overlay translucent" hidden>
+    <div class="card">
+      <h1 id="gameover-title"></h1>
+      <p id="gameover-sub"></p>
+      <button id="btn-again" class="primary">Play again</button>
+      <button id="btn-tomenu" class="secondary">Main menu</button>
+    </div>
+  </div>
+
+  <div id="error-overlay" class="overlay" hidden>
+    <div class="card">
+      <h1>Something went wrong</h1>
+      <p id="error-text"></p>
+      <button id="btn-reload" class="primary">Reload</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
