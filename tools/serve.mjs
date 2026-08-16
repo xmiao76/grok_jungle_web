@@ -22,6 +22,7 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.ttf': 'font/ttf',
   '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
 };
 
 createServer(async (req, res) => {

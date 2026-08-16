@@ -7,9 +7,8 @@ import { AudioManager } from './audio.js';
 const AVA_MOVE_DELAY_MS = 380;
 
 const LOADING_STAGES = {
-  runtime: 'Downloading Python runtime…',
-  engine: 'Loading game engine…',
-  import: 'Initializing AI…',
+  wasm: 'Loading native engine…',
+  engine: 'Initializing AI…',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -39,7 +38,7 @@ class App {
       const [info, assets] = await Promise.all([this.client.init(), loadAssets()]);
       this.renderer = new BoardRenderer($('board'), assets);
       $('engine-info').textContent =
-        `engine v${info.engineVersion} · Python ${info.python} in your browser`;
+        `engine v${info.engineVersion} · ${info.runtime || 'Rust/wasm'} in your browser`;
       this._bindUi();
       this._resize();
       window.addEventListener('resize', () => this._resize());

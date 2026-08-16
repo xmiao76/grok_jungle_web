@@ -6,3 +6,10 @@
 
 /assets/*
   Cache-Control: public, max-age=86400
+
+/wasm/*.wasm
+  Content-Type: application/wasm
+  Cache-Control: public, max-age=86400
+
+/wasm/*
+  Cache-Control: public, max-age=86400

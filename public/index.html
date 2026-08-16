@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Jungle — Dou Shou Qi</title>
-  <meta name="description" content="Play Jungle (Dou Shou Qi) against an AI in the browser. The grok_jungle Python engine runs on Pyodide.">
+  <meta name="description" content="Play Jungle (Dou Shou Qi) against a native Rust AI in the browser. The engine runs as WebAssembly — no server.">
   <link rel="icon" href="assets/pieces/gold/lion.png">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -17,7 +17,7 @@
       <p class="subtitle">Dou Shou Qi</p>
       <div class="spinner"></div>
       <p id="loading-stage">Starting…</p>
-      <p class="hint">First load downloads the Python runtime (~10&nbsp;MB); it is cached afterwards.</p>
+      <p class="hint">First load downloads the native engine (a few hundred KB); it is cached afterwards.</p>
     </div>
   </div>
 

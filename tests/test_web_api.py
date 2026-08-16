@@ -11,7 +11,7 @@ def call(fn: str, *args):
 def test_engine_info() -> None:
     info = call("engine_info")
     assert info["ok"]
-    assert info["data"]["engineVersion"] == "1.0.0"
+    assert info["data"]["engineVersion"] == "1.2.0"
     assert info["data"]["python"]
 
 

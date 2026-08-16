@@ -11,9 +11,9 @@ async function clickSquare(page, name) {
   await page.locator('#board').click({ position: { x: pos.x, y: pos.y } });
 }
 
-test('loads and initializes the Python engine', async ({ page }) => {
+test('loads and initializes the Rust/wasm engine', async ({ page }) => {
   await waitForMenu(page);
-  await expect(page.locator('#engine-info')).toContainText('Python');
+  await expect(page.locator('#engine-info')).toContainText('Rust');
   await expect(page.locator('.credits')).toContainText('Grok 4.6');
   await expect(page.locator('#error-overlay')).toBeHidden();
 });

@@ -2,7 +2,7 @@
 
 export class EngineClient {
   constructor(onProgress) {
-    this._worker = new Worker('js/engine-worker.js');
+    this._worker = new Worker('js/engine-worker.js', { type: 'module' });
     this._nextId = 1;
     this._pending = new Map();
     this._onProgress = onProgress || (() => {});

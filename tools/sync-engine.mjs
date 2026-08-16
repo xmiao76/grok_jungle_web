@@ -1,4 +1,5 @@
-// Copy the desktop engine + AI (stdlib only) into public/py/jungle/.
+// Copy the desktop *rule oracle* (stdlib only) into public/py/jungle/.
+// The playing engine is Rust/wasm in engine/; this Python tree is tests-only.
 // Usage: node tools/sync-engine.mjs
 // Override the desktop root with GROK_JUNGLE if it is not a sibling checkout.
 

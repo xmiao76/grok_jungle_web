@@ -1,15 +1,15 @@
 # Jungle (Dou Shou Qi) — Web Edition
 
 Play the classic **Jungle / 斗兽棋** board game against an AI, entirely in
-your browser. The `grok_jungle` Python engine and searcher run **client-side
-via [Pyodide](https://pyodide.org)** (CPython compiled to WebAssembly) inside a
-Web Worker — no server, no backend, zero hosting cost on the
-**Cloudflare Pages free tier**.
+your browser. The engine is a **Rust bitboard searcher compiled to
+WebAssembly**, running inside a Web Worker — no server, no backend, zero
+hosting cost on the **Cloudflare Pages free tier**.
 
-This is the web port of the Windows desktop app in `grok_jungle`
-(Python 3.12 + PySide6). The `jungle.engine` and `jungle.ai` packages are reused
-**verbatim** — a single Python source of truth for the rules and the AI — and
-only the presentation layer was rewritten for the web (HTML/Canvas/JS).
+This is the web port of the Windows desktop app in `grok_jungle`. The
+presentation layer is HTML/Canvas/JS. The playing AI is the native
+`jungle-engine` crate (make/unmake, path-aware den races, 2-piece
+tablebase, opening book). A Python rule oracle stays in-tree for tests only
+and is **not** shipped to the browser.
 
 ## Live demo
 
@@ -20,15 +20,15 @@ cannot contain underscores, so `grok_jungle` becomes `grok-jungle`.)
 ## Features
 
 - Human vs AI and AI-vs-AI (watch) modes
-- Three difficulties: Easy / Normal / Strong — the desktop iterative-deepening
-  searcher, upgraded for the web with a richer eval, static exchange pruning,
-  and a small opening book. Easy stays noisy and shallow so humans can win.
+- Three difficulties: Easy / Normal / Strong. Easy is noisy and depth-2 so
+  humans can win. Normal and Strong use the full native search, book, and
+  1-vs-1 endgame table.
 - You always own Gold. Choose who opens: human first (Gold) or AI first (Scarlet)
 - Two-click move input with legal-move indicators, capture rings, move
   animation, capture flash, capture trays, move history, undo, resign,
   board flip (view only), synthesized sound with mute
-- Loading screen while the Python runtime initializes (~10 MB first load,
-  cached afterwards)
+- Loading screen while the wasm engine initializes (a few hundred KB, cached
+  afterwards)
 
 ## Architecture
 
@@ -36,42 +36,49 @@ cannot contain underscores, so `grok_jungle` becomes `grok-jungle`.)
 Main thread (JS)                     Web Worker
 ┌─────────────────────────┐  msgs   ┌────────────────────────────┐
 │ main.js    UI state     │ ──────► │ engine-worker.js           │
-│ board-renderer.js Canvas│ ◄────── │  Pyodide (Python 3.12 wasm)│
-│ coords.js  mapping      │  JSON   │   web_api.py  JSON bridge  │
-│ audio.js   Web Audio    │         │    jungle.engine  rules    │
-│ worker-client.js        │         │    jungle.ai     search    │
+│ board-renderer.js Canvas│ ◄────── │  jungle_engine.wasm        │
+│ coords.js  mapping      │  JSON   │   rules + Game session     │
+│ audio.js   Web Audio    │         │   alphabeta + TT + TB      │
+│ worker-client.js        │         │                            │
 └─────────────────────────┘         └────────────────────────────┘
 ```
 
-- The worker owns the authoritative `Game`; the UI never re-implements rules
+- The worker owns the authoritative game; the UI never re-implements rules
   in JS (no rule drift).
-- The AI searches inside the worker, so the page stays responsive — the web
-  equivalent of the desktop app's `QThread`.
+- The AI searches inside the worker, so the page stays responsive.
 - Board flip is purely visual: the engine always sees Gold at the south
   (rank 1), exactly like the desktop renderer.
 
 ## Run locally
 
-Requires Node ≥ 20 and Python ≥ 3.12 (Python only for tests and asset prep).
+Requires Node ≥ 20, Python ≥ 3.12 (tests and asset prep), and a Rust toolchain
+only if you rebuild the engine (`wasm-pack`, `wasm32-unknown-unknown`).
 
 ```text
 python -m venv .venv
 .venv\Scripts\activate
 pip install pytest pillow
 npm install
-node tools/sync-engine.mjs
 python tools/prep-assets.py
 npm run dev          # serves public/ at http://localhost:8788
+```
+
+Prebuilt wasm lives in `public/wasm/`. After changing `engine/`:
+
+```text
+npm run build:wasm
 ```
 
 ## Tests
 
 ```text
-npm run test:py        # pytest: desktop engine/AI suite + web_api bridge
+npm run test:engine    # cargo test --release (perft, session, tactics)
+npm run test:py        # pytest: Python rule oracle + native CLI session
 npm run test:js        # JS unit tests (coordinate mapping, including flip)
-npm run test:pyodide   # engine smoke test under a real Pyodide runtime (Node)
+npm run test:wasm      # load public/wasm in Node and exercise the session
 npm run test:e2e       # Playwright: browser load, clicks, AI replies, full game
                        # (first time: npx playwright install chromium)
+python tools/strength_gate.py   # native vs frozen Python searcher, ≥ 9/12
 ```
 
 ## Deploy to Cloudflare Pages (free)
@@ -125,22 +132,22 @@ few moves on Easy, and confirm no errors in the browser console.
 ## Project layout
 
 ```
+engine/            Rust crate (rules, search, session, wasm bindings)
 public/            deployed static site
   index.html       UI shell
   css/, js/        presentation layer (Canvas renderer, worker client)
-  js/engine-worker.js  Pyodide host (pinned v0.27.7 from jsDelivr CDN)
-  py/              Python sources loaded into Pyodide
-    jungle/        engine (verbatim from grok_jungle) + web-strengthened AI
-    web_api.py     JSON bridge for the worker (web-only)
+  js/engine-worker.js  loads public/wasm/jungle_engine.js
+  wasm/            checked-in wasm-bindgen output
+  py/              Python rule oracle (tests only; not loaded by the worker)
   assets/          compressed portraits, terrain, Cinzel
-tests/             pytest, node --test, Pyodide smoke, Playwright
-tools/             sync-engine, prep-assets, static server
+tests/             pytest, node --test, wasm smoke, Playwright
+tools/             build-wasm, prep-assets, static server, strength_gate
 ```
 
 ## Credits
 
 - Game: traditional Jungle / Dou Shou Qi
   ([rules](https://en.wikipedia.org/wiki/Jungle_(board_game)))
-- Desktop engine: `C:\GitHub\grok_jungle`
+- Desktop native engine: `C:\GitHub\grok_jungle`
 - **This application was implemented by Grok 4.6 (xAI) using the Grok Build
   coding agent.**

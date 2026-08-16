@@ -1,3 +1,3 @@
-"""Jungle (Dou Shou Qi) — engine, AI, and desktop UI."""
+"""Jungle (Dou Shou Qi) — Python rule oracle (tests only)."""
 
-__version__ = "1.0.0"
+__version__ = "1.2.0"
