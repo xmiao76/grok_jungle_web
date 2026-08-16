@@ -42,6 +42,18 @@ fn main() {
                 }
             }
         }
+        Some("gen-tb") => {
+            let path = args
+                .next()
+                .unwrap_or_else(|| "src/tb2.bin".to_string());
+            match jungle_engine::tb::write_bin(&path) {
+                Ok(()) => println!("wrote {path}"),
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Some("legal") => {
             let fen = args.next().unwrap_or_else(|| Pos::start().fen());
             match Pos::parse_fen(&fen) {

@@ -122,6 +122,14 @@ mod tests {
     }
 
     #[test]
+    fn water_rat_cannot_capture_land_rat() {
+        let pos = Pos::parse_fen("7/7/7/7/7/rR5/7/7/7 g").unwrap();
+        let uci = crate::movegen::legal_uci(&pos);
+        assert!(!uci.iter().any(|m| m == "b4a4"), "{uci:?}");
+        assert!(uci.iter().any(|m| m == "b4b3"), "{uci:?}");
+    }
+
+    #[test]
     fn den_in_one() {
         let mut pos = Pos::parse_fen("c6/3D3/7/7/7/7/7/7/7 g").unwrap();
         let h = pos.hash;

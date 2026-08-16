@@ -240,6 +240,10 @@ impl Pos {
         if is_water_sq(dst) && (attacker.ptype != RAT || !is_water_sq(src)) {
             return false;
         }
+        // A swimming Rat may only capture in water (another swimming Rat).
+        if attacker.ptype == RAT && is_water_sq(src) && !is_water_sq(dst) {
+            return false;
+        }
         if attacker.ptype == RAT && defender.ptype == ELEPHANT {
             return !is_water_sq(src) && !is_water_sq(dst);
         }

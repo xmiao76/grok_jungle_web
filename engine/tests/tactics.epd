@@ -9,5 +9,6 @@ c6/3D3/7/7/7/7/7/7/7 g; bm d8d9; id den_in_1;
 2E4/2r4/7/7/7/7/7/7/7 s; bm c8c9; id rat_takes_trapped_elephant;
 7/7/7/7/7/7/7/r6/E6 g; am a1a2; id elephant_must_not_take_rat;
 7/7/7/7/7/eR5/7/7/7 g; am b4a4; id rat_must_not_take_elephant_from_water;
+7/7/7/7/7/rR5/7/7/7 g; am b4a4; id water_rat_must_not_take_land_rat;
 7/7/7/7/7/7/7/3D3/7 g; am d2d1; id must_not_enter_own_den;
 2L4/2c4/7/7/7/7/7/7/7 g; am c9c8; id trapped_lion_cannot_take_cat;

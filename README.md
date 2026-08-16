@@ -105,6 +105,7 @@ few moves on Easy, and confirm no errors in the browser console.
   the Rat/Elephant exception.
 - Rank: Elephant 8 > Lion 7 > Tiger 6 > Leopard 5 > Wolf 4 > Dog 3 > Cat 2 > Rat 1.
 - Only the Rat swims. A Rat in water can be captured only by another Rat in water.
+- A swimming Rat cannot capture any piece on land (including a land Rat).
 - The Rat may capture the Elephant from land (not from water). The Elephant
   **cannot** capture a Rat, except a Rat sitting on the Elephant’s own trap.
 - Enemy traps drop a piece’s rank to 0. Your own traps do nothing.

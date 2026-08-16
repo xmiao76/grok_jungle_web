@@ -149,6 +149,9 @@ def can_capture(pos: Position, attacker: Piece, src: int, defender: Piece, dst: 
     if is_water(dst):
         if attacker.ptype is not PieceType.RAT or not is_water(src):
             return False
+    # A swimming Rat may only capture in water (another swimming Rat).
+    if attacker.ptype is PieceType.RAT and is_water(src) and not is_water(dst):
+        return False
     if attacker.ptype is PieceType.RAT and defender.ptype is PieceType.ELEPHANT:
         return not is_water(src) and not is_water(dst)
     # Elephant never captures a Rat, except a Rat sitting on the Elephant's trap
