@@ -106,7 +106,7 @@ fn handle(session: &mut Session, line: &str) -> String {
             let mut it = rest.split_whitespace();
             let mode = it.next().unwrap_or("human_ai");
             let hf = it.next().unwrap_or("1") != "0";
-            let diff = it.next().unwrap_or("normal");
+            let diff = it.next().unwrap_or("medium");
             session.new_game(mode, hf, diff)
         }
         "APPLY" => {
@@ -145,6 +145,33 @@ fn handle(session: &mut Session, line: &str) -> String {
                 Ok((uci, nodes, d)) => json!({
                     "ok": true,
                     "data": { "uci": uci, "nodes": nodes, "depth": d },
+                    "error": null
+                })
+                .to_string(),
+                Err(e) => json!({"ok": false, "data": null, "error": e}).to_string(),
+            }
+        }
+        "NODES" => {
+            // NODES <budget> <book 0|1> <tb 0|1> <fen>[ | <histfen>...]
+            let mut it = rest.splitn(4, ' ');
+            let nodes: u64 = it.next().and_then(|s| s.parse().ok()).unwrap_or(5000);
+            let book = it.next() == Some("1");
+            let tb = it.next() != Some("0");
+            let tail = it.next().unwrap_or("");
+            let mut fens: Vec<String> = tail
+                .split(" | ")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            let fen = if fens.is_empty() {
+                String::new()
+            } else {
+                fens.remove(0)
+            };
+            match session.search_nodes(&fen, &fens, nodes, book, tb) {
+                Ok((uci, n, d)) => json!({
+                    "ok": true,
+                    "data": { "uci": uci, "nodes": n, "depth": d },
                     "error": null
                 })
                 .to_string(),

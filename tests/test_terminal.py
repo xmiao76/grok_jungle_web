@@ -11,7 +11,7 @@ def test_wipe_wins() -> None:
     nxt = apply_move(pos, Move.parse("a1a2"))
     result, outcome = terminal_after(nxt, Move.parse("a1a2"), [nxt.hash])
     assert result is Result.GOLD_WINS
-    assert outcome is Outcome.WIPE
+    assert outcome is Outcome.ELIMINATION
 
 
 def test_no_moves_loses() -> None:
@@ -27,7 +27,7 @@ def test_no_moves_loses() -> None:
     pos.place(Square.parse("b9"), Piece(Side.GOLD, PieceType.ELEPHANT))
     result, outcome = terminal_after(pos, None, [pos.hash])
     assert result is Result.GOLD_WINS
-    assert outcome is Outcome.NO_MOVES
+    assert outcome is Outcome.IMMOBILIZATION
 
 
 def test_threefold_draw() -> None:
@@ -50,7 +50,7 @@ def test_fifty_move_draw() -> None:
     pos.halfmove = HALFMOVE_DRAW
     result, outcome = terminal_after(pos, None, [pos.hash])
     assert result is Result.DRAW
-    assert outcome is Outcome.FIFTY
+    assert outcome is Outcome.NO_CAPTURE
 
 
 def test_human_first_gold_to_move() -> None:

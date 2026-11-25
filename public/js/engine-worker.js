@@ -22,7 +22,12 @@ async function ensure() {
   if (ready) return ready;
   ready = (async () => {
     progress('wasm');
-    await init();
+    const embedded = globalThis.JUNGLE_ENGINE_BYTES;
+    if (embedded) {
+      await init({ module_or_path: embedded });
+    } else {
+      await init();
+    }
     progress('engine');
     const mb = (typeof navigator !== 'undefined' && navigator.deviceMemory && navigator.deviceMemory < 4)
       ? 4
@@ -39,7 +44,7 @@ function callApi(type, payload) {
       return new_game(
         payload.mode || 'human_ai',
         payload.humanFirst !== false,
-        payload.difficulty || 'normal',
+        payload.difficulty || 'medium',
       );
     case 'apply_move':
       return apply_move(payload.src, payload.dst);

@@ -82,11 +82,11 @@ class Result(Enum):
 
 class Outcome(Enum):
     DEN = "den"
-    WIPE = "wipe"
-    NO_MOVES = "no_moves"
+    ELIMINATION = "elimination"
+    IMMOBILIZATION = "immobilization"
     RESIGN = "resign"
     REPETITION = "repetition"
-    FIFTY = "fifty"
+    NO_CAPTURE = "no-capture"
 
 
 @dataclass(frozen=True, slots=True)

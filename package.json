@@ -1,6 +1,6 @@
 {
   "name": "grok-jungle-web",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Jungle (Dou Shou Qi) in the browser — Rust/wasm engine, deployed to Cloudflare Pages",
   "type": "module",
@@ -8,6 +8,9 @@
     "sync": "node tools/sync-engine.mjs",
     "assets": "python tools/prep-assets.py",
     "build:wasm": "node tools/build-wasm.mjs",
+    "build:component": "node tools/build-component.mjs",
+    "build:release": "node tools/build-release.mjs",
+    "test:conformance": "node tools/conformance.mjs",
     "dev": "node tools/serve.mjs",
     "test:py": "python -m pytest",
     "test:js": "node --test tests/js/*.test.mjs",
@@ -17,7 +20,9 @@
     "deploy": "wrangler pages deploy public --project-name grok-jungle"
   },
   "devDependencies": {
+    "@bytecodealliance/jco-transpile": "^0.24.0",
     "@playwright/test": "^1.49.0",
+    "esbuild": "^0.25.12",
     "pyodide": "0.27.7",
     "wrangler": "^4.20.0"
   }

@@ -27,26 +27,26 @@
       <h1>JUNGLE</h1>
       <p class="subtitle">Dou Shou Qi</p>
       <p id="engine-info" class="hint"></p>
-      <p class="hint credits">Made with model <b>Grok 4.6</b> (xAI)
-        · code agent <b>Grok Build</b></p>
+      <p id="identity-line" class="hint credits"></p>
+      <p class="hint"><a id="github-link" href="https://github.com/xmiao76/grok_jungle_web">Source on GitHub</a></p>
 
       <div class="menu-row">
         <span class="label">AI strength</span>
         <div class="segmented">
           <button class="diff-btn" data-d="easy">Easy</button>
-          <button class="diff-btn active" data-d="normal">Normal</button>
-          <button class="diff-btn" data-d="strong">Strong</button>
+          <button class="diff-btn active" data-d="medium">Medium</button>
+          <button class="diff-btn" data-d="hard">Hard</button>
         </div>
       </div>
 
       <div class="menu-row">
-        <label class="label" for="first-toggle">Human moves first (Gold opens)</label>
+        <label class="label" for="first-toggle">Red moves first (you open)</label>
         <label class="switch">
           <input type="checkbox" id="first-toggle" checked>
           <span class="slider"></span>
         </label>
       </div>
-      <p class="hint first-note">You always own Gold. Off: Scarlet (AI) opens from the north. Flip later is view-only.</p>
+      <p class="hint first-note">You always play Red, on the bottom. Off: Blue opens from the top. Flip later is view-only.</p>
 
       <button id="btn-start-hva" class="primary">Play vs AI</button>
       <button id="btn-start-ava" class="secondary">Watch AI vs AI</button>
@@ -56,31 +56,38 @@
         <div>
           <p><b>Goal:</b> win by moving any piece into the opponent’s <b>den</b>,
           or by capturing every enemy animal.</p>
-          <p><b>Moving:</b> Gold sits south. Click one of your pieces, then a
+          <p><b>Moving:</b> Red sits on the bottom. Click one of your pieces, then a
           highlighted square — jade dot = move, cinnabar ring = capture.
-          Pieces step one square orthogonally (never diagonally).</p>
-          <p><b>Ranks</b> (strong → weak): Elephant 8, Lion 7, Tiger 6, Leopard 5,
-          Wolf 4, Dog 3, Cat 2, Rat 1. You may capture equal or lower rank —
-          except the <b>Rat may capture the Elephant</b> from land, and the
-          Elephant can never take a Rat unless that Rat sits on the Elephant’s
-          <i>own</i> trap (rank 0).</p>
+          Pieces step one square orthogonally.</p>
+          <p><b>Ranks</b> from rat (1) to elephant (8): rat, cat, dog, wolf,
+          leopard, tiger, lion, elephant. Equal or lower rank captures.
+          An untrapped rat takes an elephant. An elephant cannot take an untrapped rat.</p>
           <ul>
-            <li><b>Rivers:</b> only the Rat swims. A Rat in water can be taken
-            only by another Rat in water. A swimming Rat cannot capture any
-            piece on land (including a land Rat or the Elephant).</li>
-            <li><b>River jumps:</b> the <b>Lion</b> leaps two blocks horizontally
-            (a↔d, d↔g) and three blocks vertically (rank 3↔7). The <b>Tiger</b>
-            leaps two blocks only. A Rat on any water square in the path blocks
-            the leap. The landing square may be a capture.</li>
-            <li><b>Traps:</b> an enemy piece on one of <i>your</i> traps has
-            rank 0. Your own traps never harm you.</li>
-            <li><b>Dens:</b> you can never enter your own den.</li>
+            <li><b>Rivers:</b> only the rat swims. A swimming rat captures another rat in the water.
+            A capture cannot cross the bank in either direction.</li>
+            <li><b>Jumps:</b> a lion on land may jump two or three water squares.
+            A tiger jumps exactly two. A rat of either color on the water blocks the jump.</li>
+            <li><b>Traps:</b> a piece on an opponent trap has rank 0.
+            Any attacker can capture it. A trapped attacker cannot capture an untrapped defender.
+            Your own traps do not weaken you.</li>
+            <li><b>Dens:</b> you cannot enter your own den. Entering the enemy den wins.</li>
           </ul>
-          <p><b>Also:</b> a side with no legal move loses. Threefold repetition,
-          or 100 half-moves without a capture, is a draw.</p>
-          <p><b>Controls:</b> Undo (or Ctrl+Z) takes back your turn and the AI
-          reply. Flip (or F) turns the view only — state and turn stay put.
-          Resign, Mute, Menu. You always play Gold.</p>
+          <p><b>The game also ends</b> when the opponent has no pieces, when the opponent has no legal move,
+          when the same position (the board and the side to move) occurs for the third time,
+          or after 100 moves with no capture. The first three are wins. The last two are draws.</p>
+          <p><b>Controls:</b> Undo takes back your unanswered move, or your move and the AI reply.
+          In AI vs AI it takes back one ply. Flip (or F) changes only the view.
+          Mute, Resign, Menu. Hard thinks for at most one second.</p>
+        </div>
+      </details>
+
+      <details class="rules" id="arena-panel">
+        <summary>Download Arena .wasm</summary>
+        <div>
+          <p id="arena-meta" class="hint"></p>
+          <p>Open the Arena upload page, choose the file, wait until every admission stage passes, then pick <b>Play in left seat</b> or <b>Play in right seat</b>.</p>
+          <p><a href="https://jungle-leaderboard.pages.dev/arena/upload/">Arena upload page</a></p>
+          <button id="btn-download-wasm" class="secondary" type="button">Download Arena .wasm</button>
         </div>
       </details>
     </div>
@@ -108,12 +115,12 @@
       <pre id="meta-text" class="meta"></pre>
       <div class="trays">
         <div class="tray">
-          <span class="tray-label"><span class="dot scarlet"></span>Captured from Scarlet</span>
-          <div id="captured-scarlet" class="tray-body">—</div>
+          <span class="tray-label"><span class="dot scarlet"></span>Captured from Blue</span>
+          <div id="captured-blue" class="tray-body">—</div>
         </div>
         <div class="tray">
-          <span class="tray-label"><span class="dot gold"></span>Captured from Gold</span>
-          <div id="captured-gold" class="tray-body">—</div>
+          <span class="tray-label"><span class="dot gold"></span>Captured from Red</span>
+          <div id="captured-red" class="tray-body">—</div>
         </div>
       </div>
       <p id="last-move" class="hint"></p>

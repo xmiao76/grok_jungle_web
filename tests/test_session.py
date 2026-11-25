@@ -61,8 +61,8 @@ def test_new_game_human_first_gold(eng) -> None:
     res = call(eng, "NEW human_ai 1 easy")
     assert res["ok"]
     state = res["data"]["state"]
-    assert state["turn"] == "gold"
-    assert state["humanSide"] == "gold"
+    assert state["turn"] == "red"
+    assert state["humanSide"] == "red"
     assert state["humanFirst"] is True
     assert state["ply"] == 0
     assert len(state["legalMoves"]) == 24
@@ -73,8 +73,8 @@ def test_new_game_human_first_gold(eng) -> None:
 def test_new_game_ai_first_scarlet_opens(eng) -> None:
     res = call(eng, "NEW human_ai 0 easy")
     state = res["data"]["state"]
-    assert state["turn"] == "scarlet"
-    assert state["humanSide"] == "gold"
+    assert state["turn"] == "blue"
+    assert state["humanSide"] == "red"
     assert state["humanFirst"] is False
 
 
@@ -90,17 +90,17 @@ def test_legal_opening_and_undo(eng) -> None:
     moved = call(eng, "APPLY g3 g4")
     assert moved["ok"]
     assert moved["data"]["state"]["ply"] == 1
-    assert moved["data"]["state"]["turn"] == "scarlet"
+    assert moved["data"]["state"]["turn"] == "blue"
 
     ai = call(eng, "AI 80")
     assert ai["ok"]
     assert ai["data"]["state"]["ply"] == 2
-    assert ai["data"]["state"]["turn"] == "gold"
+    assert ai["data"]["state"]["turn"] == "red"
 
     undone = call(eng, "UNDO")
     assert undone["ok"]
     assert undone["data"]["state"]["ply"] == 0
-    assert undone["data"]["state"]["turn"] == "gold"
+    assert undone["data"]["state"]["turn"] == "red"
 
 
 def test_resign_human(eng) -> None:
@@ -108,7 +108,7 @@ def test_resign_human(eng) -> None:
     res = call(eng, "RESIGN")
     state = res["data"]["state"]
     assert state["terminal"] is True
-    assert state["result"] == "scarlet_wins"
+    assert state["result"] == "blue_wins"
     assert state["outcome"] == "resign"
 
 
@@ -122,7 +122,7 @@ def test_replay_opening(eng) -> None:
 
 
 def test_invalid_difficulty(eng) -> None:
-    res = call(eng, "NEW human_ai 1 medium")
+    res = call(eng, "NEW human_ai 1 nope")
     assert res["ok"] is False
 
 
@@ -134,10 +134,10 @@ def test_undo_after_ai_opening_leaves_scarlet(eng) -> None:
     undone = call(eng, "UNDO")
     assert undone["ok"]
     assert undone["data"]["state"]["ply"] == 0
-    assert undone["data"]["state"]["turn"] == "scarlet"
+    assert undone["data"]["state"]["turn"] == "blue"
 
 
 def test_captured_tray_after_take(eng) -> None:
     call(eng, "NEW human_ai 1 easy")
     state = call(eng, "STATE")["data"]["state"]
-    assert state["captured"] == {"gold": [], "scarlet": []}
+    assert state["captured"] == {"red": [], "blue": []}

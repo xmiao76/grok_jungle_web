@@ -1,14 +1,12 @@
 //! JSON game session matching the previous `web_api.py` envelope.
 
-use crate::board::{enemy_den, DEN_GOLD, DEN_SCARLET};
 use crate::movegen::gen_moves;
 use crate::pos::Pos;
+use crate::rules::{self, Verdict};
 use crate::search::{Limits, Searcher};
 use crate::types::*;
+use crate::wire::{self, BLUE, RED};
 use serde_json::{json, Value};
-
-const HALFMOVE_DRAW: u8 = 100;
-const ENGINE_VERSION: &str = "1.2.0";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Res {
@@ -22,33 +20,44 @@ impl Res {
     fn as_str(self) -> &'static str {
         match self {
             Res::Ongoing => "ongoing",
-            Res::GoldWins => "gold_wins",
-            Res::ScarletWins => "scarlet_wins",
+            Res::GoldWins => "red_wins",
+            Res::ScarletWins => "blue_wins",
             Res::Draw => "draw",
         }
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Out {
     Den,
-    Wipe,
-    NoMoves,
+    Elimination,
+    Immobilization,
     Resign,
     Repetition,
-    Fifty,
+    NoCapture,
 }
 
 impl Out {
     fn as_str(self) -> &'static str {
         match self {
             Out::Den => "den",
-            Out::Wipe => "wipe",
-            Out::NoMoves => "no_moves",
+            Out::Elimination => "elimination",
+            Out::Immobilization => "immobilization",
             Out::Resign => "resign",
             Out::Repetition => "repetition",
-            Out::Fifty => "fifty",
+            Out::NoCapture => "no-capture",
         }
+    }
+
+    fn from_reason(reason: &str) -> Option<Self> {
+        Some(match reason {
+            "den" => Out::Den,
+            "elimination" => Out::Elimination,
+            "immobilization" => Out::Immobilization,
+            "repetition" => Out::Repetition,
+            "no-capture" => Out::NoCapture,
+            _ => return None,
+        })
     }
 }
 
@@ -75,7 +84,7 @@ impl Game {
             config: Config {
                 mode: "human_ai".into(),
                 human_first: true,
-                difficulty: "normal".into(),
+                difficulty: "medium".into(),
             },
             pos: Pos::start(),
             history: Vec::new(),
@@ -92,16 +101,7 @@ impl Game {
         if let Some(c) = cfg {
             self.config = c;
         }
-        self.pos = if self.config.human_first {
-            Pos::start()
-        } else {
-            let mut p = Pos::start();
-            // Scarlet opens: start_position(first_side) in Python uses start_position(to_move).
-            // start_position(Side.SCARLET) is the same placement, Scarlet to move.
-            p.to_move = SCARLET;
-            p.hash ^= crate::pos::side_key();
-            p
-        };
+        self.pos = wire::opening(self.config.human_first);
         self.history = vec![self.pos.clone()];
         self.moves.clear();
         self.hashes = vec![self.pos.hash];
@@ -178,68 +178,28 @@ impl Game {
         self.outcome = Some(Out::Resign);
     }
 
-    fn inspect(&self) -> (Res, Option<Out>) {
-        if self.pos.board[DEN_SCARLET as usize] >= 0 {
-            let p = self.pos.pieces[self.pos.board[DEN_SCARLET as usize] as usize];
-            if p.alive && p.color == GOLD {
-                return (Res::GoldWins, Some(Out::Den));
-            }
+    fn apply_verdict(&mut self, verdict: Verdict) {
+        if verdict.is_playing() {
+            self.result = Res::Ongoing;
+            self.outcome = None;
+            return;
         }
-        if self.pos.board[DEN_GOLD as usize] >= 0 {
-            let p = self.pos.pieces[self.pos.board[DEN_GOLD as usize] as usize];
-            if p.alive && p.color == SCARLET {
-                return (Res::ScarletWins, Some(Out::Den));
-            }
-        }
-        if self.pos.counts[GOLD as usize] == 0 {
-            return (Res::ScarletWins, Some(Out::Wipe));
-        }
-        if self.pos.counts[SCARLET as usize] == 0 {
-            return (Res::GoldWins, Some(Out::Wipe));
-        }
-        let reps = self.hashes.iter().filter(|&&h| h == self.pos.hash).count();
-        if reps >= 3 {
-            return (Res::Draw, Some(Out::Repetition));
-        }
-        if self.pos.halfmove >= HALFMOVE_DRAW {
-            return (Res::Draw, Some(Out::Fifty));
-        }
-        (Res::Ongoing, None)
+        self.outcome = Out::from_reason(verdict.reason);
+        self.result = match verdict.reason {
+            "repetition" | "no-capture" => Res::Draw,
+            _ => match verdict.winner {
+                Some(RED) => Res::GoldWins,
+                Some(BLUE) => Res::ScarletWins,
+                _ => Res::Draw,
+            },
+        };
     }
 
     fn refresh(&mut self) {
-        let (r, o) = self.inspect();
-        if r != Res::Ongoing {
-            self.result = r;
-            self.outcome = o;
+        if self.outcome == Some(Out::Resign) {
             return;
         }
-        if let Some(last) = self.moves.last() {
-            if let Some(mover) = self.pos.piece_at(last.to) {
-                if last.to == enemy_den(mover.color) {
-                    self.result = if mover.color == GOLD {
-                        Res::GoldWins
-                    } else {
-                        Res::ScarletWins
-                    };
-                    self.outcome = Some(Out::Den);
-                    return;
-                }
-            }
-        }
-        let mut list = MoveList::new();
-        gen_moves(&self.pos, &mut list, false);
-        if list.len == 0 {
-            self.result = if self.pos.to_move == SCARLET {
-                Res::GoldWins
-            } else {
-                Res::ScarletWins
-            };
-            self.outcome = Some(Out::NoMoves);
-            return;
-        }
-        self.result = Res::Ongoing;
-        self.outcome = None;
+        self.apply_verdict(rules::adjudicate(&self.pos, &self.hashes));
     }
 }
 
@@ -272,11 +232,7 @@ fn piece_type_name(pt: u8) -> &'static str {
 }
 
 fn side_name(side: u8) -> &'static str {
-    if side == GOLD {
-        "gold"
-    } else {
-        "scarlet"
-    }
+    wire::side_wire(side)
 }
 
 fn move_json(mv: Move) -> Value {
@@ -296,19 +252,19 @@ fn captured_lists(pos: &Pos) -> Value {
             have[p.color as usize][p.ptype as usize] += 1;
         }
     }
-    let mut gold = Vec::new();
-    let mut scarlet = Vec::new();
+    let mut red = Vec::new();
+    let mut blue = Vec::new();
     for pt in RAT..=ELEPHANT {
-        let lost_g = 1u8.saturating_sub(have[GOLD as usize][pt as usize]);
-        let lost_s = 1u8.saturating_sub(have[SCARLET as usize][pt as usize]);
-        for _ in 0..lost_g {
-            gold.push(piece_noun(pt));
+        let lost_r = 1u8.saturating_sub(have[RED as usize][pt as usize]);
+        let lost_b = 1u8.saturating_sub(have[BLUE as usize][pt as usize]);
+        for _ in 0..lost_r {
+            red.push(piece_noun(pt));
         }
-        for _ in 0..lost_s {
-            scarlet.push(piece_noun(pt));
+        for _ in 0..lost_b {
+            blue.push(piece_noun(pt));
         }
     }
-    json!({ "gold": gold, "scarlet": scarlet })
+    json!({ "red": red, "blue": blue })
 }
 
 fn state_json(game: &Game) -> Value {
@@ -344,9 +300,26 @@ fn state_json(game: &Game) -> Value {
         "captured": captured_lists(&game.pos),
         "mode": game.config.mode,
         "humanFirst": game.config.human_first,
-        "humanSide": "gold",
+        "humanSide": "red",
         "difficulty": game.config.difficulty,
+        "noCapturePlies": game.pos.halfmove,
     })
+}
+
+fn undo_plies(game: &Game) -> usize {
+    if game.moves.is_empty() {
+        return 0;
+    }
+    if game.config.mode != "human_ai" {
+        return 1;
+    }
+    let last = *game.moves.last().unwrap();
+    let mover = game.pos.piece_at(last.to).map(|p| p.color);
+    if mover == Some(RED) || game.moves.len() < 2 {
+        1
+    } else {
+        2
+    }
 }
 
 fn ok(data: Value) -> String {
@@ -357,37 +330,44 @@ fn err(message: &str) -> String {
     json!({ "ok": false, "data": Value::Null, "error": message }).to_string()
 }
 
-fn difficulty_limits(name: &str) -> Option<Limits> {
-    match name {
-        "easy" => Some(Limits {
-            move_time_ms: 120,
+/// Easy and medium spend less than the one-second Hard ceiling.
+/// Easy is depth 2 with seeded noise and no book or tablebase.
+/// Medium is a 400 ms search with book and tablebase.
+/// Hard uses the full 850 ms so the reply, including worker messaging, lands within 1 s.
+pub fn difficulty_limits(name: &str) -> Option<Limits> {
+    Some(match name {
+        "easy" => Limits {
+            move_time_ms: 150,
             max_depth: 2,
-            hard_cap_ms: 280,
-            noise: 0.30,
+            hard_cap_ms: 150,
+            noise: 0.35,
             node_limit: 0,
             use_book: false,
             use_tb: false,
-        }),
-        "normal" => Some(Limits {
-            move_time_ms: 900,
-            max_depth: 20,
-            hard_cap_ms: 2000,
+            seed: 1,
+        },
+        "medium" => Limits {
+            move_time_ms: 400,
+            max_depth: 24,
+            hard_cap_ms: 400,
             noise: 0.0,
             node_limit: 0,
             use_book: true,
             use_tb: true,
-        }),
-        "strong" => Some(Limits {
-            move_time_ms: 2800,
-            max_depth: 32,
-            hard_cap_ms: 5000,
+            seed: 1,
+        },
+        "hard" => Limits {
+            move_time_ms: 850,
+            max_depth: 48,
+            hard_cap_ms: 850,
             noise: 0.0,
             node_limit: 0,
             use_book: true,
             use_tb: true,
-        }),
-        _ => None,
-    }
+            seed: 1,
+        },
+        _ => return None,
+    })
 }
 
 pub struct Session {
@@ -409,8 +389,17 @@ impl Session {
 
     pub fn engine_info() -> String {
         ok(json!({
-            "engineVersion": ENGINE_VERSION,
-            "runtime": "Rust/wasm",
+            "title": crate::identity::title(),
+            "gameVersion": crate::identity::GAME_VERSION,
+            "engineVersion": crate::identity::ENGINE_VERSION,
+            "runtime": crate::identity::RUNTIME,
+            "model": crate::identity::MODEL,
+            "codeAgent": crate::identity::CODE_AGENT,
+            "modelPlatform": crate::identity::MODEL_PLATFORM,
+            "githubUrl": crate::identity::GITHUB_URL,
+            "rulesId": crate::identity::RULES_ID,
+            "rulesDigest": crate::identity::RULES_DIGEST,
+            "wasmFilename": crate::identity::wasm_filename(),
         }))
     }
 
@@ -426,6 +415,7 @@ impl Session {
             human_first,
             difficulty: difficulty.to_string(),
         }));
+        self.searcher.clear_tables();
         ok(json!({ "state": state_json(&self.game) }))
     }
 
@@ -476,7 +466,7 @@ impl Session {
         if let Some(ms) = time_budget_ms {
             if ms > 0 {
                 limits.move_time_ms = ms;
-                limits.hard_cap_ms = ((ms as f64) * 2.2) as u64;
+                limits.hard_cap_ms = ms;
             }
         }
         let mv = self
@@ -497,10 +487,7 @@ impl Session {
         if self.game.moves.is_empty() {
             return err("nothing to undo");
         }
-        let mut plies = 1;
-        if self.game.config.mode == "human_ai" && self.game.moves.len() >= 2 {
-            plies = 2;
-        }
+        let plies = undo_plies(&self.game);
         self.game.undo(plies);
         ok(json!({ "state": state_json(&self.game) }))
     }
@@ -589,6 +576,39 @@ impl Session {
             node_limit: 0,
             use_book,
             use_tb,
+            seed: 0,
+        };
+        let rec = crate::search::best_move(&mut pos, limits, &hist);
+        Ok((rec.mv.uci(), rec.nodes, rec.depth))
+    }
+
+    /// Fresh-budget search. `nodes` is a ceiling on visited positions.
+    /// Clock stays off so the result depends only on the position and the budget.
+    pub fn search_nodes(
+        &mut self,
+        fen: &str,
+        history_fens: &[String],
+        nodes: u64,
+        use_book: bool,
+        use_tb: bool,
+    ) -> Result<(String, u64, i32), String> {
+        let mut pos = Pos::parse_fen(fen)?;
+        let mut hist = vec![pos.hash];
+        for h in history_fens {
+            let hh = Pos::parse_fen(h)?.hash;
+            if hh != pos.hash {
+                hist.push(hh);
+            }
+        }
+        let limits = Limits {
+            move_time_ms: 0,
+            max_depth: 64,
+            hard_cap_ms: 0,
+            noise: 0.0,
+            node_limit: nodes.max(1),
+            use_book,
+            use_tb,
+            seed: 1,
         };
         let rec = crate::search::best_move(&mut pos, limits, &hist);
         Ok((rec.mv.uci(), rec.nodes, rec.depth))
@@ -616,7 +636,7 @@ mod tests {
         let mut s = Session::new();
         let data = parse_ok(&s.new_game("human_ai", true, "easy"));
         assert_eq!(data["state"]["legalMoves"].as_array().unwrap().len(), 24);
-        assert_eq!(data["state"]["turn"], "gold");
+        assert_eq!(data["state"]["turn"], "red");
         assert!(data["state"]["fen"].as_str().unwrap().ends_with(" g"));
     }
 
@@ -624,7 +644,7 @@ mod tests {
     fn ai_first_scarlet_opens() {
         let mut s = Session::new();
         let data = parse_ok(&s.new_game("human_ai", false, "easy"));
-        assert_eq!(data["state"]["turn"], "scarlet");
+        assert_eq!(data["state"]["turn"], "blue");
         assert_eq!(data["state"]["humanFirst"], false);
     }
 
@@ -642,12 +662,12 @@ mod tests {
         s.new_game("human_ai", true, "easy");
         let moved = parse_ok(&s.apply_move("g3", "g4"));
         assert_eq!(moved["state"]["ply"], 1);
-        assert_eq!(moved["state"]["turn"], "scarlet");
+        assert_eq!(moved["state"]["turn"], "blue");
         let ai = parse_ok(&s.ai_move(Some(40)));
         assert_eq!(ai["state"]["ply"], 2);
         let undone = parse_ok(&s.undo());
         assert_eq!(undone["state"]["ply"], 0);
-        assert_eq!(undone["state"]["turn"], "gold");
+        assert_eq!(undone["state"]["turn"], "red");
     }
 
     #[test]
@@ -655,7 +675,7 @@ mod tests {
         let mut s = Session::new();
         s.new_game("human_ai", true, "easy");
         let data = parse_ok(&s.resign());
-        assert_eq!(data["state"]["result"], "scarlet_wins");
+        assert_eq!(data["state"]["result"], "blue_wins");
         assert_eq!(data["state"]["outcome"], "resign");
     }
 
@@ -676,6 +696,6 @@ mod tests {
         assert_eq!(ai["state"]["ply"], 1);
         let undone = parse_ok(&s.undo());
         assert_eq!(undone["state"]["ply"], 0);
-        assert_eq!(undone["state"]["turn"], "scarlet");
+        assert_eq!(undone["state"]["turn"], "blue");
     }
 }

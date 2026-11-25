@@ -1,0 +1,2 @@
+5000 nodes: new 1.5/2 (games 0.5 as Red, 1.0 as Blue); Wilson 95% CI [0.20, 0.97]
+20000 nodes: new 0.5/2 (games 0.5 as Red, 0.0 as Blue); Wilson 95% CI [0.03, 0.80]

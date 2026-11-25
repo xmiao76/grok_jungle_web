@@ -1,12 +1,17 @@
 pub mod board;
 pub mod book;
 pub mod eval;
+pub mod identity;
 pub mod movegen;
+pub mod paint;
 pub mod pos;
+pub mod rules;
 pub mod search;
+#[cfg(feature = "json")]
 pub mod session;
 pub mod tb;
 pub mod types;
+pub mod wire;
 
 use crate::movegen::perft as rust_perft;
 use crate::pos::Pos;
@@ -46,13 +51,17 @@ pub fn search_fen(
         node_limit,
         use_book,
         use_tb,
+        seed: 0,
     };
     let rec = crate::search::best_move(&mut pos, limits, &history);
     Ok((rec.mv.uci(), rec.nodes, rec.depth))
 }
 
-#[cfg(feature = "wasm")]
+#[cfg(feature = "shell")]
 pub mod wasm;
+
+#[cfg(feature = "arena")]
+pub mod component;
 
 #[cfg(test)]
 mod tests {

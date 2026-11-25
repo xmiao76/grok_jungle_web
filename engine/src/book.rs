@@ -56,20 +56,20 @@ const BOOK: &[Entry] = &[
     },
 ];
 
-pub fn probe(pos: &Pos, noise_ok: bool) -> Option<Move> {
-    if !noise_ok {
-        // Always allow book; callers decide. `noise_ok` reserved for Easy.
-        let _ = noise_ok;
-    }
+/// Pick a book move from `pos.hash` and `seed`. The same pair always
+/// returns the same move, including across component instances.
+pub fn probe(pos: &Pos, seed: u32) -> Option<Move> {
     let fen = pos.fen();
     let entry = BOOK.iter().find(|e| e.fen == fen)?;
     let total: u32 = entry.moves.iter().map(|(_, w)| *w).sum();
     if total == 0 {
         return None;
     }
-    static TICK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-    let tick = TICK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let mut r = pos.hash.wrapping_mul(tick | 1) % u64::from(total);
+    let mut r = pos
+        .hash
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(u64::from(seed) | 1)
+        % u64::from(total);
     for &(uci, w) in entry.moves {
         if r < u64::from(w) {
             return Move::parse(uci);
@@ -86,14 +86,14 @@ mod tests {
     #[test]
     fn start_is_in_book() {
         let pos = Pos::start();
-        let mv = probe(&pos, true).expect("start book");
+        let mv = probe(&pos, 1).expect("start book");
         assert!(["g3g4", "a1a2", "g1f1", "a3a4", "g1g2", "e3e4"].contains(&mv.uci().as_str()));
     }
 
     #[test]
     fn scarlet_start_is_in_book() {
         let pos = Pos::parse_fen("l5t/1d3c1/r1p1w1e/7/7/7/E1W1P1R/1C3D1/T5L s").unwrap();
-        let mv = probe(&pos, true).expect("scarlet start book");
+        let mv = probe(&pos, 1).expect("scarlet start book");
         assert!(["a7a6", "g9g8", "a9b9", "g7g6", "a9a8", "c7c6"].contains(&mv.uci().as_str()));
     }
 }

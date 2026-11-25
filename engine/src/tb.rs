@@ -214,6 +214,7 @@ pub fn warm() {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub fn write_bin(path: &str) -> std::io::Result<()> {
     let t = build();
     let bytes: Vec<u8> = t.iter().map(|&v| v as u8).collect();

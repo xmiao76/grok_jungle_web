@@ -14,7 +14,11 @@ async function clickSquare(page, name) {
 test('loads and initializes the Rust/wasm engine', async ({ page }) => {
   await waitForMenu(page);
   await expect(page.locator('#engine-info')).toContainText('Rust');
-  await expect(page.locator('.credits')).toContainText('Grok 4.6');
+  await expect(page.locator('#identity-line')).toContainText('Grok-4.7');
+  await expect(page.locator('#identity-line')).toContainText('GrokBuild');
+  await expect(page.locator('#identity-line')).toContainText('official');
+  await expect(page.locator('#arena-meta')).toContainText('desktop-jungle-v2');
+  await expect(page.locator('#arena-meta')).toContainText('SHA-256');
   await expect(page.locator('#error-overlay')).toBeHidden();
 });
 
@@ -73,7 +77,7 @@ test('flip is view-only and clicks still map', async ({ page }) => {
   ).toBeGreaterThanOrEqual(1);
 });
 
-test('AI first undo re-kicks Scarlet', async ({ page }) => {
+test('AI first undo re-kicks Blue', async ({ page }) => {
   await waitForMenu(page);
   await page.click('.diff-btn[data-d="easy"]');
   await page.locator('.switch').click();
@@ -88,7 +92,7 @@ test('AI first undo re-kicks Scarlet', async ({ page }) => {
   ).toBeGreaterThanOrEqual(1);
   await expect.poll(
     () => page.evaluate(() => window.__jungle.state?.turn),
-  ).toBe('gold');
+  ).toBe('red');
   await page.click('#btn-undo');
   await expect.poll(
     () => page.evaluate(() => window.__jungle.state?.ply),
@@ -112,7 +116,37 @@ test('full AI-vs-AI game reaches a valid terminal state in-browser', async ({ pa
     return { terminal: state.terminal, result: state.result, outcome: state.outcome, plies };
   });
   expect(result.terminal).toBe(true);
-  expect(['gold_wins', 'scarlet_wins', 'draw']).toContain(result.result);
-  expect(['den', 'wipe', 'no_moves', 'repetition', 'fifty']).toContain(result.outcome);
+  expect(['red_wins', 'blue_wins', 'draw']).toContain(result.result);
+  expect(['den', 'elimination', 'immobilization', 'repetition', 'no-capture']).toContain(result.outcome);
   expect(result.plies).toBeGreaterThan(4);
+});
+
+test('undo during a Hard think drops the in-flight reply', async ({ page }) => {
+  await waitForMenu(page);
+  await page.click('.diff-btn[data-d="hard"]');
+  await page.click('#btn-start-hva');
+  await clickSquare(page, 'g3');
+  await clickSquare(page, 'g4');
+  await expect(page.locator('#btn-undo')).toBeEnabled();
+  await page.click('#btn-undo');
+  await expect.poll(
+    () => page.evaluate(() => window.__jungle.state?.ply),
+  ).toBe(0);
+  await page.waitForTimeout(1200);
+  expect(await page.evaluate(() => window.__jungle.state?.ply)).toBe(0);
+  await expect(page.locator('#status-text')).toContainText('your turn');
+});
+
+test('a Hard reply reaches the board within one second', async ({ page }) => {
+  await waitForMenu(page);
+  await page.click('.diff-btn[data-d="hard"]');
+  await page.click('#btn-start-hva');
+  const started = Date.now();
+  await clickSquare(page, 'g3');
+  await clickSquare(page, 'g4');
+  await expect.poll(
+    () => page.evaluate(() => window.__jungle.state?.ply),
+    { timeout: 5_000 },
+  ).toBe(2);
+  expect(Date.now() - started).toBeLessThan(1000);
 });

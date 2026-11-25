@@ -1,6 +1,6 @@
 [package]
 name = "jungle-engine"
-version = "1.2.0"
+version = "2.0.0"
 edition = "2021"
 description = "Native Jungle (Dou Shou Qi) engine — WASM + native"
 license = "MIT"
@@ -12,21 +12,34 @@ crate-type = ["cdylib", "rlib"]
 [[bin]]
 name = "jungle-engine"
 path = "src/bin/jungle-engine.rs"
+required-features = ["json", "clock"]
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-web-time = "1.1"
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+web-time = { version = "1.1", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
+wit-bindgen = { version = "0.41", optional = true }
 
 [features]
-default = []
-wasm = ["dep:wasm-bindgen"]
+default = ["json", "clock"]
+json = ["dep:serde", "dep:serde_json"]
+clock = ["dep:web-time"]
+shell = ["json", "clock", "dep:wasm-bindgen"]
+wasm = ["shell"]
+arena = ["dep:wit-bindgen"]
+
+[dev-dependencies]
+sha2 = "0.10"
 
 [profile.release]
 lto = true
 codegen-units = 1
 opt-level = 3
+panic = "abort"
+
+[build-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false

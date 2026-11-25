@@ -35,13 +35,17 @@ const info = JSON.parse(mod.engine_info());
 check(info.ok && info.data.engineVersion, `engine_info: v${info.data.engineVersion} ${info.data.runtime}`);
 check(String(info.data.runtime).includes('Rust'), 'runtime is Rust/wasm');
 
-for (const difficulty of ['easy', 'normal', 'strong']) {
+check(info.data.title === 'Grok-4.7 · GrokBuild', 'title omits official platform');
+check(info.data.rulesId === 'desktop-jungle-v2', 'rules id');
+check(info.data.wasmFilename === 'grok-4-7-grokbuild-2.0.0.wasm', 'release filename');
+
+for (const difficulty of ['easy', 'medium', 'hard']) {
   const res = JSON.parse(mod.new_game('human_ai', true, difficulty));
   check(res.ok && res.data.state.legalMoves.length === 24, `new_game(${difficulty})`);
 }
 
 let env = JSON.parse(mod.new_game('human_ai', true, 'easy'));
-check(env.data.state.turn === 'gold', 'human first is gold');
+check(env.data.state.turn === 'red', 'human first is red');
 env = JSON.parse(mod.apply_move('g3', 'g4'));
 check(env.ok && env.data.state.ply === 1, 'apply g3g4');
 const t1 = performance.now();
@@ -53,11 +57,19 @@ env = JSON.parse(mod.undo());
 check(env.ok && env.data.state.ply === 0, 'undo pair');
 
 env = JSON.parse(mod.new_game('human_ai', false, 'easy'));
-check(env.data.state.turn === 'scarlet', 'ai first is scarlet');
+check(env.data.state.turn === 'blue', 'ai first is blue');
 env = JSON.parse(mod.ai_move(80));
-check(env.ok && env.data.state.ply === 1, 'scarlet opening');
+check(env.ok && env.data.state.ply === 1, 'blue opening');
 env = JSON.parse(mod.undo());
-check(env.ok && env.data.state.turn === 'scarlet' && env.data.state.ply === 0, 'undo ai opening');
+check(env.ok && env.data.state.turn === 'blue' && env.data.state.ply === 0, 'undo ai opening');
+
+env = JSON.parse(mod.new_game('human_ai', true, 'hard'));
+env = JSON.parse(mod.apply_move('g3', 'g4'));
+const tHard = performance.now();
+env = JSON.parse(mod.ai_move(0));
+const hardDt = performance.now() - tHard;
+check(env.ok && env.data.state.ply === 2, `hard reply in ${Math.round(hardDt)}ms`);
+check(hardDt < 1000, 'hard move returns within 1s');
 
 const illegal = JSON.parse(mod.apply_move('a1', 'd5'));
 check(!illegal.ok, 'illegal rejected');

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Jungle Arena conformance</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font: 16px/1.45 Palatino, Georgia, serif; background: #1a1714; color: #f3ead7; margin: 0; }
+    main { max-width: 1100px; margin: 0 auto; padding: 28px 20px 64px; }
+    h1 { font-weight: 500; letter-spacing: 0.08em; }
+    canvas { width: min(100%, 360px); height: auto; background: #111; border-radius: 8px; }
+    .boards { display: flex; flex-wrap: wrap; gap: 18px; }
+    figure { margin: 0; }
+    figcaption { margin-top: 6px; color: #c8b89a; }
+    button { font: inherit; background: #c4553a; color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; cursor: pointer; }
+    #log { white-space: pre-wrap; color: #d9cbb3; }
+    .fail { color: #ffb4a8; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Arena conformance</h1>
+  <p id="status">Loading the release component…</p>
+  <div class="boards">
+    <figure>
+      <canvas id="unflipped" width="448" height="576"></canvas>
+      <figcaption>Release board, Red at the bottom</figcaption>
+    </figure>
+    <figure>
+      <canvas id="flipped" width="448" height="576"></canvas>
+      <figcaption>Same revision, flipped</figcaption>
+    </figure>
+  </div>
+  <p><button id="run" type="button" disabled>Play both seats against the fixture</button></p>
+  <pre id="log"></pre>
+</main>
+<script type="module">
+import { instantiate as loadRelease } from './conformance/release.js';
+import { instantiate as loadFixture } from './conformance/fixture.js';
+import init, { init_engine, new_game, apply_move } from './wasm/jungle_engine.js';
+import { legalWire, snapshotFromState } from './js/wire-map.js';
+
+const status = document.getElementById('status');
+const logEl = document.getElementById('log');
+const lines = [];
+function log(line, fail = false) {
+  lines.push(line);
+  logEl.innerHTML = lines.map((text) => text.startsWith('FAIL')
+    ? `<span class="fail">${text}</span>` : text).join('\n');
+  console.log(line);
+  if (fail) logEl.dataset.failed = '1';
+}
+
+function paint(canvas, rgba) {
+  const ctx = canvas.getContext('2d');
+  const image = new ImageData(new Uint8ClampedArray(rgba), 448, 576);
+  ctx.putImageData(image, 0, 0);
+}
+
+function host(canvas) {
+  const frames = [];
+  return {
+    frames,
+    imports: {
+      'jungle:arena/display': {
+        present(_w, _h, rgba) {
+          const copy = new Uint8Array(rgba);
+          frames.push(copy);
+          if (canvas) paint(canvas, copy);
+        },
+      },
+    },
+  };
+}
+
+let releaseGame;
+let releaseBytes;
+
+async function boot() {
+  await init();
+  init_engine(16);
+  const name = 'grok-4-7-grokbuild-2.0.0.wasm';
+  const res = await fetch(`wasm/${name}`);
+  if (!res.ok) throw new Error('release wasm missing');
+  releaseBytes = new Uint8Array(await res.arrayBuffer());
+  const digest = await crypto.subtle.digest('SHA-256', releaseBytes);
+  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const expected = (await (await fetch('conformance/release.sha256')).text()).trim();
+  if (hex !== expected) throw new Error('downloaded bytes do not match the transpiled release');
+  log(`SHA-256 ${hex}`);
+
+  const unflipped = host(document.getElementById('unflipped'));
+  const flipped = host(document.getElementById('flipped'));
+  const loaded = await loadRelease(undefined, unflipped.imports);
+  releaseGame = loaded.game;
+  const info = releaseGame.info();
+  log(`${info.title} · ${info.gameVersion} · ${info.rulesId}`);
+  const opened = JSON.parse(new_game('ai_ai', true, 'medium'));
+  const state = opened.data.state;
+  const legal = legalWire(state);
+  const snap = snapshotFromState(state, [], 'red');
+  releaseGame.init({ seat: 'red', difficulty: 'medium', seed: 1 });
+  const idx = releaseGame.chooseMove(snap, legal.map(({ src, dst }) => ({ src, dst })), 1000);
+  releaseGame.render(snap, false, 1000);
+  const flipHost = await loadRelease(undefined, flipped.imports);
+  flipHost.game.init({ seat: 'red', difficulty: 'medium', seed: 1 });
+  flipHost.game.render(snap, true, 1000);
+  const ok = idx >= 0 && idx < 24
+    && unflipped.frames.length === 1
+    && flipped.frames.length === 1
+    && unflipped.frames[0].length === 1032192
+    && flipped.frames[0].some((b, i) => b !== unflipped.frames[0][i]);
+  log(ok ? 'ok - admission smoke on the release bytes' : 'FAIL - admission smoke');
+  if (!ok) logEl.dataset.failed = '1';
+  status.textContent = ok ? 'Release component answered and drew both orientations.' : 'Smoke failed.';
+  document.getElementById('run').disabled = !ok;
+  window.__conformance = { ok, hash: hex, info };
+}
+
+async function play(seat) {
+  const redHost = host(null);
+  const blueHost = host(null);
+  const redMod = await (seat === 'red' ? loadRelease : loadFixture)(undefined, redHost.imports);
+  const blueMod = await (seat === 'blue' ? loadRelease : loadFixture)(undefined, blueHost.imports);
+  redMod.game.init({ seat: 'red', difficulty: 'medium', seed: 20261120 });
+  blueMod.game.init({ seat: 'blue', difficulty: 'medium', seed: 20261120 });
+  let cur = JSON.parse(new_game('ai_ai', true, 'medium')).data.state;
+  const history = [];
+  const players = { red: redMod.game, blue: blueMod.game };
+  let ply = 0;
+  while (!cur.terminal && ply < 240) {
+    const moves = legalWire(cur);
+    const snap = snapshotFromState(cur, history, 'red');
+    const choice = players[cur.turn].chooseMove(snap, moves.map(({ src, dst }) => ({ src, dst })), 5000);
+    if (choice < 0 || choice >= moves.length) throw new Error('index outside the legal list');
+    const mv = moves[choice];
+    const applied = JSON.parse(apply_move(mv.algSrc, mv.algDst));
+    if (!applied.ok) throw new Error(applied.error);
+    history.push([mv.src, mv.dst]);
+    cur = applied.data.state;
+    const shown = snapshotFromState(cur, history, 'red');
+    redMod.game.render(shown, false, 1000);
+    blueMod.game.render(shown, true, 1000);
+    ply++;
+  }
+  return { result: cur.result, outcome: cur.outcome, ply, terminal: cur.terminal };
+}
+
+document.getElementById('run').addEventListener('click', async () => {
+  document.getElementById('run').disabled = true;
+  try {
+    const asRed = await play('red');
+    log(`Red seat ${asRed.result} ${asRed.outcome} in ${asRed.ply}`);
+    const asBlue = await play('blue');
+    log(`Blue seat ${asBlue.result} ${asBlue.outcome} in ${asBlue.ply}`);
+    const reasons = ['den', 'elimination', 'immobilization', 'repetition', 'no-capture'];
+    const ok = asRed.terminal && asBlue.terminal
+      && reasons.includes(asRed.outcome) && reasons.includes(asBlue.outcome);
+    log(ok ? 'ok - both seats reached a referee result' : 'FAIL - match');
+    window.__conformance.matches = { asRed, asBlue, ok };
+    status.textContent = ok ? 'Both seats finished on the board.' : 'A match failed.';
+  } catch (err) {
+    log(`FAIL - ${err.message}`);
+    status.textContent = err.message;
+  }
+});
+
+boot().catch((err) => {
+  status.textContent = err.message;
+  log(`FAIL - ${err.message}`);
+});
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 // Minimal static file server for local dev and E2E tests.
-// Usage: node tools/serve.mjs [port]   (serves ./public, default port 8788)
+// Usage: node tools/serve.mjs [port]   (serves ./public, default port 8799)
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -7,7 +7,7 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(fileURLToPath(new URL('..', import.meta.url)), 'public');
-const PORT = Number(process.argv[2]) || 8788;
+const PORT = Number(process.argv[2]) || 8799;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',

@@ -5,6 +5,7 @@ use crate::pos::Pos;
 use crate::types::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
+#[cfg(feature = "clock")]
 use web_time::{Duration, Instant};
 
 pub static STOP: AtomicBool = AtomicBool::new(false);
@@ -22,6 +23,7 @@ pub struct Limits {
     pub node_limit: u64,
     pub use_book: bool,
     pub use_tb: bool,
+    pub seed: u32,
 }
 
 impl Limits {
@@ -34,6 +36,7 @@ impl Limits {
             node_limit: 0,
             use_book: false,
             use_tb: true,
+            seed: 0,
         }
     }
 }
@@ -54,10 +57,12 @@ pub struct Searcher {
     history: [[[i32; NSQUARES]; NSQUARES]; 2],
     pub nodes: u64,
     best: Move,
+    node_limit: u64,
+    use_clock: bool,
+    #[cfg(feature = "clock")]
     deadline: Instant,
+    #[cfg(feature = "clock")]
     soft: Instant,
-    start: Instant,
-    soft_cut: Instant,
     use_tb: bool,
     pub root_depth: i32,
 }
@@ -73,10 +78,12 @@ impl Searcher {
             history: [[[0; NSQUARES]; NSQUARES]; 2],
             nodes: 0,
             best: Move::NONE,
+            node_limit: 0,
+            use_clock: false,
+            #[cfg(feature = "clock")]
             deadline: Instant::now(),
+            #[cfg(feature = "clock")]
             soft: Instant::now(),
-            start: Instant::now(),
-            soft_cut: Instant::now(),
             use_tb: true,
             root_depth: 0,
         }
@@ -84,6 +91,15 @@ impl Searcher {
 
     pub fn new_default() -> Self {
         Self::new(16)
+    }
+
+    pub fn clear_tables(&mut self) {
+        self.tt.fill(TTEntry::default());
+        self.killers = [[Move::NONE; 2]; MAX_PLY];
+        self.history = [[[0; NSQUARES]; NSQUARES]; 2];
+        self.nodes = 0;
+        self.best = Move::NONE;
+        self.root_depth = 0;
     }
 
     pub fn resize_tt(&mut self, tt_mb: usize) {
@@ -148,31 +164,55 @@ impl Searcher {
         if STOP.load(Ordering::Relaxed) {
             return true;
         }
-        if (self.nodes & 127) == 0 && Instant::now() >= self.deadline {
+        #[cfg(feature = "clock")]
+        if self.use_clock && (self.nodes & 2047) == 0 && Instant::now() >= self.deadline {
             return true;
         }
         false
+    }
+
+    fn take_node(&mut self) -> bool {
+        if self.node_limit > 0 && self.nodes >= self.node_limit {
+            return false;
+        }
+        self.nodes += 1;
+        true
     }
 
     pub fn search(&mut self, pos: &mut Pos, limits: Limits, history: &[u64]) -> Move {
         STOP.store(false, Ordering::Relaxed);
         self.nodes = 0;
         self.use_tb = limits.use_tb;
+        self.node_limit = limits.node_limit;
         self.killers = [[Move::NONE; 2]; MAX_PLY];
-        let now = Instant::now();
-        self.start = now;
-        self.soft = now + Duration::from_millis(limits.move_time_ms.max(1));
-        self.soft_cut = now + Duration::from_millis((limits.move_time_ms.max(1) * 6) / 10);
-        self.deadline = now + Duration::from_millis(limits.hard_cap_ms.max(1));
+        self.use_clock = limits.move_time_ms > 0 || limits.hard_cap_ms > 0;
+        #[cfg(feature = "clock")]
+        if self.use_clock {
+            let now = Instant::now();
+            let soft_ms = if limits.move_time_ms > 0 {
+                limits.move_time_ms
+            } else {
+                limits.hard_cap_ms
+            };
+            let hard_ms = if limits.hard_cap_ms > 0 {
+                limits.hard_cap_ms
+            } else {
+                soft_ms
+            };
+            self.soft = now + Duration::from_millis(soft_ms.max(1));
+            self.deadline = now + Duration::from_millis(hard_ms.max(1));
+        }
 
         if limits.use_book {
-            if let Some(mv) = crate::book::probe(pos, false) {
+            if let Some(mv) = crate::book::probe(pos, limits.seed) {
+                self.nodes = 1;
                 self.best = mv;
                 return mv;
             }
         }
         if limits.use_tb {
             if let Some(mv) = crate::tb::best_move(pos) {
+                self.nodes = 1;
                 self.best = mv;
                 return mv;
             }
@@ -181,13 +221,23 @@ impl Searcher {
         let mut root_moves = MoveList::new();
         gen_moves(pos, &mut root_moves, false);
         if root_moves.len == 0 {
+            self.nodes = 1;
             return Move::NONE;
         }
-        for i in 0..root_moves.len {
-            if is_den_entry(pos, root_moves.moves[i]) {
-                self.best = root_moves.moves[i];
-                return self.best;
+        if root_moves.len == 1 || (0..root_moves.len).any(|i| is_den_entry(pos, root_moves.moves[i]))
+        {
+            self.nodes = 1;
+            if root_moves.len == 1 {
+                self.best = root_moves.moves[0];
+            } else {
+                for i in 0..root_moves.len {
+                    if is_den_entry(pos, root_moves.moves[i]) {
+                        self.best = root_moves.moves[i];
+                        break;
+                    }
+                }
             }
+            return self.best;
         }
         self.order(pos, &mut root_moves, Move::NONE, 0);
         self.best = root_moves.moves[0];
@@ -203,10 +253,8 @@ impl Searcher {
         self.root_depth = 0;
 
         for depth in 1..=max_d {
-            if depth > 1 && Instant::now() >= self.soft_cut {
-                break;
-            }
-            if Instant::now() >= self.soft && depth > 1 {
+            #[cfg(feature = "clock")]
+            if self.use_clock && depth > 1 && Instant::now() >= self.soft {
                 break;
             }
             let window = if depth >= 3 { 48 } else { MATE };
@@ -232,13 +280,14 @@ impl Searcher {
             prev = score;
             completed_best = self.best;
             self.root_depth = depth;
-            if Instant::now() >= self.soft {
+            #[cfg(feature = "clock")]
+            if self.use_clock && Instant::now() >= self.soft {
                 break;
             }
-            if score >= MATE - 64 {
+            if score >= MATE - 64 || score <= -MATE + 64 {
                 break;
             }
-            if limits.node_limit > 0 && self.nodes >= limits.node_limit {
+            if self.node_limit > 0 && self.nodes >= self.node_limit {
                 break;
             }
         }
@@ -256,6 +305,9 @@ impl Searcher {
         moves: &mut MoveList,
         limits: Limits,
     ) -> Option<i32> {
+        if !self.take_node() {
+            return None;
+        }
         let tt_mv = self.tt_probe(pos.hash, depth, 0, alpha, beta).1;
         self.order(pos, moves, tt_mv, 0);
         let mut best = -MATE;
@@ -293,10 +345,16 @@ impl Searcher {
                     .map(|(_, m)| *m)
                     .collect();
                 if !top.is_empty()
-                    && xorshift(pos.hash ^ self.nodes) as f32 / (u64::MAX as f32) < limits.noise
+                    && xorshift(pos.hash ^ self.nodes ^ u64::from(limits.seed)) as f32
+                        / (u64::MAX as f32)
+                        < limits.noise
                 {
-                    let idx =
-                        (xorshift(pos.hash.wrapping_add(self.nodes * 17)) as usize) % top.len();
+                    let idx = (xorshift(
+                        pos.hash
+                            .wrapping_add(self.nodes.wrapping_mul(17))
+                            ^ u64::from(limits.seed),
+                    ) as usize)
+                        % top.len();
                     self.best = top[idx];
                 }
             }
@@ -359,8 +417,7 @@ impl Searcher {
         path: &mut Vec<u64>,
         ply: i32,
     ) -> Option<i32> {
-        self.nodes += 1;
-        if self.timed_out() {
+        if !self.take_node() || self.timed_out() {
             return None;
         }
 
@@ -535,8 +592,7 @@ impl Searcher {
         path: &mut Vec<u64>,
         ply: i32,
     ) -> Option<i32> {
-        self.nodes += 1;
-        if self.timed_out() {
+        if !self.take_node() || self.timed_out() {
             return None;
         }
         if ply > 28 {
@@ -626,40 +682,18 @@ fn approaching_den(pos: &Pos, mv: Move) -> bool {
 }
 
 fn terminal_score(pos: &Pos, path: &[u64], ply: i32) -> Option<i32> {
-    if pos.board[DEN_SCARLET as usize] >= 0 {
-        let p = pos.pieces[pos.board[DEN_SCARLET as usize] as usize];
-        if p.color == GOLD && p.alive {
-            let s = MATE - ply;
-            return Some(if pos.to_move == GOLD { s } else { -s });
+    let verdict = crate::rules::adjudicate(pos, path);
+    if verdict.is_playing() {
+        return None;
+    }
+    match verdict.reason {
+        "repetition" | "no-capture" => Some(0),
+        _ => {
+            let winner = verdict.winner?;
+            let score = MATE - ply;
+            Some(if pos.to_move == winner { score } else { -score })
         }
     }
-    if pos.board[DEN_GOLD as usize] >= 0 {
-        let p = pos.pieces[pos.board[DEN_GOLD as usize] as usize];
-        if p.color == SCARLET && p.alive {
-            let s = MATE - ply;
-            return Some(if pos.to_move == SCARLET { s } else { -s });
-        }
-    }
-    if pos.counts[GOLD as usize] == 0 {
-        let s = MATE - ply;
-        return Some(if pos.to_move == SCARLET { s } else { -s });
-    }
-    if pos.counts[SCARLET as usize] == 0 {
-        let s = MATE - ply;
-        return Some(if pos.to_move == GOLD { s } else { -s });
-    }
-    if pos.halfmove >= HALFMOVE_DRAW {
-        return Some(0);
-    }
-    let reps = path.iter().filter(|&&h| h == pos.hash).count();
-    if ply == 0 {
-        if reps >= 3 {
-            return Some(0);
-        }
-    } else if reps >= 2 {
-        return Some(0);
-    }
-    None
 }
 
 fn mvv_lva(pos: &Pos, mv: Move) -> i32 {
@@ -784,6 +818,16 @@ pub struct SearchResult {
     pub nodes: u64,
     pub depth: i32,
     pub score: i32,
+}
+
+/// Hard uses the whole budget. Medium uses one third. Easy caps at 200 nodes.
+pub fn arena_node_limit(level: &str, budget: u32) -> u64 {
+    let budget = u64::from(budget.max(1));
+    match level {
+        "easy" => budget.min(200),
+        "medium" => (budget / 3).max(1),
+        _ => budget,
+    }
 }
 
 pub fn best_move(pos: &mut Pos, limits: Limits, history: &[u64]) -> SearchResult {

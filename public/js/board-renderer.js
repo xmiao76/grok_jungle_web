@@ -364,11 +364,12 @@ export class BoardRenderer {
 
   _drawPiece(piece, px, py) {
     const { ctx, cellSize: cs } = this;
-    const img = this.assets.pieces[`${piece.side}_${piece.type}`];
-    const gold = piece.side === 'gold';
-    const team = gold ? '#F2D36B' : '#3EE0D2';
-    const padFill = gold ? '#C8962A' : '#157A74';
-    const padEdge = gold ? '#6A4208' : '#083F3C';
+    const red = piece.side === 'red';
+    const artSide = red ? 'gold' : 'scarlet';
+    const img = this.assets.pieces[`${artSide}_${piece.type}`];
+    const team = red ? '#F2D36B' : '#3EE0D2';
+    const padFill = red ? '#C8962A' : '#157A74';
+    const padEdge = red ? '#6A4208' : '#083F3C';
     const cx = px + cs / 2;
     const cy = py + cs / 2;
     const padR = cs * 0.44;
@@ -482,7 +483,8 @@ export async function loadAssets() {
     const img = new Image();
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
-    img.src = url;
+    const embedded = globalThis.JUNGLE_ASSETS && globalThis.JUNGLE_ASSETS[url];
+    img.src = embedded || url;
   });
   const animals = ['rat', 'cat', 'dog', 'wolf', 'leopard', 'tiger', 'lion', 'elephant'];
   await Promise.all([

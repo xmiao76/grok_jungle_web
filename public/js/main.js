@@ -20,7 +20,7 @@ class App {
     this.audio = new AudioManager();
     this.screen = 'loading';
     this.mode = 'human_ai';
-    this.difficulty = 'normal';
+    this.difficulty = 'medium';
     this.humanFirst = true;
     this.state = null;
     this.aiThinking = false;
@@ -38,7 +38,25 @@ class App {
       const [info, assets] = await Promise.all([this.client.init(), loadAssets()]);
       this.renderer = new BoardRenderer($('board'), assets);
       $('engine-info').textContent =
-        `engine v${info.engineVersion} · ${info.runtime || 'Rust/wasm'} in your browser`;
+        `${info.title || 'Jungle'} · engine v${info.engineVersion} · ${info.runtime || 'Rust'}`;
+      const platform = info.modelPlatform ? ` · platform ${info.modelPlatform}` : '';
+      $('identity-line').textContent =
+        `Model ${info.model || ''} · code agent ${info.codeAgent || ''}${platform}`;
+      if (info.githubUrl) $('github-link').href = info.githubUrl;
+      const arena = $('arena-meta');
+      if (arena) {
+        const platform = info.modelPlatform ? ` · platform ${info.modelPlatform}` : '';
+        arena.textContent =
+          `${info.title || ''} · v${info.gameVersion || info.engineVersion || ''}\n` +
+          `Model ${info.model || ''} · code agent ${info.codeAgent || ''}${platform}\n` +
+          `${info.githubUrl || ''}\n` +
+          `${info.rulesId || ''} · ${info.rulesDigest || ''}\n` +
+          `${info.wasmFilename || ''}`;
+      }
+      this._arenaName = info.wasmFilename || 'arena.wasm';
+      $('btn-download-wasm').addEventListener('click', () => this._downloadArena());
+      this._showArenaHash();
+      window.__jungle.thread = this.client.thread;
       this._bindUi();
       this._resize();
       window.addEventListener('resize', () => this._resize());
@@ -47,6 +65,45 @@ class App {
       window.__jungle.ready = true;
     } catch (err) {
       this._fatal(`Failed to load the game engine: ${err.message}`);
+    }
+  }
+
+  async _downloadArena() {
+    const name = this._arenaName || 'arena.wasm';
+    let bytes = globalThis.JUNGLE_ARENA_BYTES;
+    if (!bytes) {
+      const res = await fetch(`wasm/${name}`);
+      if (!res.ok) throw new Error('Arena file is not in this build');
+      bytes = new Uint8Array(await res.arrayBuffer());
+    }
+    const blob = new Blob([bytes], { type: 'application/wasm' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async _showArenaHash() {
+    const arena = $('arena-meta');
+    if (!arena) return;
+    try {
+      let bytes = globalThis.JUNGLE_ARENA_BYTES;
+      if (!bytes) {
+        const res = await fetch(`wasm/${this._arenaName}`);
+        if (!res.ok) return;
+        bytes = new Uint8Array(await res.arrayBuffer());
+        globalThis.JUNGLE_ARENA_BYTES = bytes;
+      }
+      let hex = globalThis.JUNGLE_ARENA_SHA256 || '';
+      if (globalThis.crypto && crypto.subtle) {
+        const digest = await crypto.subtle.digest('SHA-256', bytes);
+        hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      }
+      if (hex) arena.textContent += `\nSHA-256 ${hex}`;
+    } catch {
+      // The hash line stays empty when the file is absent.
     }
   }
 
@@ -139,7 +196,7 @@ class App {
       $('btn-pause').textContent = 'Pause';
       this._showScreen('playing');
       this._updatePanel();
-      if (mode === 'ai_ai' || res.state.turn !== 'gold') {
+      if (mode === 'ai_ai' || res.state.turn !== 'red') {
         this._requestAiMove(gen);
       }
     } catch (err) {
@@ -172,9 +229,13 @@ class App {
   }
 
   async undo() {
-    if (this.mode !== 'human_ai' || this.aiThinking || this.busy) return;
+    if (this.mode !== 'human_ai' || this.busy) return;
     if (!this.state || this.state.ply < 1 || this.state.terminal) return;
+    // Drop an in-flight AI reply. The worker may still finish; the generation
+    // check throws that result away.
+    this.gen += 1;
     const gen = this.gen;
+    this.aiThinking = false;
     this.busy = true;
     this._updatePanel();
     try {
@@ -185,7 +246,7 @@ class App {
       this._select(null);
       this._showScreen('playing');
       this._updatePanel();
-      if (this.state.turn === 'scarlet' && !this.state.terminal) {
+      if (this.state.turn === 'blue' && !this.state.terminal) {
         this._requestAiMove(gen);
       }
     } catch {
@@ -230,7 +291,7 @@ class App {
   _onBoardClick(ev) {
     if (this.screen !== 'playing' || this.mode !== 'human_ai') return;
     if (this.aiThinking || this.busy || !this.state || this.state.terminal) return;
-    if (this.state.turn !== 'gold') return;
+    if (this.state.turn !== 'red') return;
 
     const rect = $('board').getBoundingClientRect();
     const name = this.renderer.pixelToSquare(ev.clientX - rect.left, ev.clientY - rect.top);
@@ -249,7 +310,7 @@ class App {
     }
 
     const piece = this.state.board.find((p) => p.sq === name);
-    if (piece && piece.side === 'gold' && this.state.turn === 'gold') {
+    if (piece && piece.side === 'red' && this.state.turn === 'red') {
       const moves = this.state.legalMoves.filter((m) => m.src === name);
       this._select(moves.length ? name : null, moves);
     } else {
@@ -279,7 +340,10 @@ class App {
     } catch (err) {
       if (gen === this.gen) this._fatal(err.message);
     } finally {
-      if (gen === this.gen) this.busy = false;
+      if (gen === this.gen) {
+        this.busy = false;
+        this._updatePanel();
+      }
     }
   }
 
@@ -344,7 +408,7 @@ class App {
 
   _moverSide(res) {
     // After the move, turn has flipped; the mover is the opposite of the new turn.
-    return res.state.turn === 'gold' ? 'scarlet' : 'gold';
+    return res.state.turn === 'red' ? 'blue' : 'red';
   }
 
   _moverType(res, newState) {
@@ -378,22 +442,22 @@ class App {
     const r = this.state.result;
     if (r === 'draw') return 'Draw';
     if (this.mode === 'human_ai') {
-      return r === 'gold_wins' ? 'You win' : 'Scarlet wins';
+      return r === 'red_wins' ? 'You win' : 'Blue wins';
     }
-    return r === 'gold_wins' ? 'Gold wins' : 'Scarlet wins';
+    return r === 'red_wins' ? 'Red wins' : 'Blue wins';
   }
 
   _resultSub() {
     const why = {
       den: 'entered the den',
-      wipe: 'captured every animal',
-      no_moves: 'opponent has no move',
+      elimination: 'captured every animal',
+      immobilization: 'opponent has no move',
       resign: 'resignation',
       repetition: 'threefold repetition',
-      fifty: 'hundred quiet half-moves',
+      'no-capture': 'hundred quiet moves',
     }[this.state.outcome] || '';
     if (this.state.result === 'draw') return why;
-    const who = this.state.result === 'gold_wins' ? 'Gold' : 'Scarlet';
+    const who = this.state.result === 'red_wins' ? 'Red' : 'Blue';
     return `${who} — ${why}`;
   }
 
@@ -405,7 +469,7 @@ class App {
 
   _updatePanel() {
     if (!this.state) return;
-    const turnName = this.state.turn === 'gold' ? 'Gold' : 'Scarlet';
+    const turnName = this.state.turn === 'red' ? 'Red' : 'Blue';
     let status;
     if (this.state.terminal) {
       status = this._resultTitle();
@@ -414,8 +478,8 @@ class App {
         : `${turnName} is thinking…`;
     } else if (this.aiThinking) {
       status = `${turnName} is thinking…`;
-    } else if (this.state.turn === 'gold') {
-      status = 'Gold to move — your turn';
+    } else if (this.state.turn === 'red') {
+      status = 'Red to move — your turn';
     } else {
       status = `${turnName} to move`;
     }
@@ -423,11 +487,11 @@ class App {
     $('status-spinner').hidden = !(this.aiThinking ||
       (this.mode === 'ai_ai' && !this.avaPaused && !this.state.terminal));
 
-    $('btn-undo').disabled = !(this.mode === 'human_ai' && !this.aiThinking &&
+    $('btn-undo').disabled = !(this.mode === 'human_ai' &&
       !this.busy && this.state.ply >= 1 && !this.state.terminal);
     $('btn-resign').disabled = this.state.terminal || this.aiThinking || this.busy;
 
-    const diffLabel = { easy: 'Easy', normal: 'Normal', strong: 'Strong' }[this.state.difficulty];
+    const diffLabel = { easy: 'Easy', medium: 'Medium', hard: 'Hard' }[this.state.difficulty];
     const first = this.state.humanFirst ? 'Human' : 'AI';
     const flip = this.renderer && this.renderer.flipped ? 'flipped' : 'south at bottom';
     const mode = this.mode === 'ai_ai' ? 'AI vs AI' : 'Human vs AI';
@@ -435,22 +499,22 @@ class App {
     $('meta-text').textContent =
       `First move: ${first}\nAI: ${diffLabel}\nView: ${flip}\nPly: ${this.state.ply}`;
 
-    $('captured-scarlet').textContent = this.state.captured.scarlet.join('  ') || '—';
-    $('captured-gold').textContent = this.state.captured.gold.join('  ') || '—';
+    $('captured-blue').textContent = (this.state.captured.blue || []).join('  ') || '—';
+    $('captured-red').textContent = (this.state.captured.red || []).join('  ') || '—';
 
     const last = $('last-move');
     if (this.state.lastMove) {
       last.textContent = `Last: ${this.state.lastMove.src} → ${this.state.lastMove.dst}${this.state.lastMove.isJump ? ' (jump)' : ''}`;
     } else {
-      last.textContent = 'New arrangement. Gold sits south, Scarlet north.';
+      last.textContent = 'New arrangement. Red sits south, Blue north.';
     }
 
     const list = $('history-list');
     list.innerHTML = '';
     this.state.history.forEach((uci, i) => {
       const li = document.createElement('li');
-      const opener = this.state.humanFirst ? 'G' : 'S';
-      const tag = i % 2 === 0 ? opener : (opener === 'G' ? 'S' : 'G');
+      const opener = this.state.humanFirst ? 'R' : 'B';
+      const tag = i % 2 === 0 ? opener : (opener === 'R' ? 'B' : 'R');
       li.textContent = `${i + 1}. ${tag} ${uci}`;
       list.appendChild(li);
     });
